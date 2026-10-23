@@ -1,0 +1,284 @@
+{
+  "name": "Jarvis - Orchestrator (Webhook)",
+  "nodes": [
+    {
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        -640,
+        -368
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jarvis",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "Jarvis Header Auth"
+        }
+      }
+    },
+    {
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -416,
+        -368
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.query }}",
+        "options": {
+          "systemMessage": "You are Jarvis, a sharp, capable and natural voice assistant. Communicate concisely, warmly and efficiently, keeping responses short (1 to 3 sentences) like an executive chief of staff. Avoid markdown, bullet points and robotic introductions, and never recite lists of capabilities unless explicitly asked. Always track the current date and time. When the user makes a request, call the right tool (web search, calendar, or email draft), acknowledging naturally while waiting. Once the result returns, summarize it clearly and conversationally without exposing raw JSON, technical terms or code."
+        }
+      }
+    },
+    {
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        -160
+      ],
+      "parameters": {
+        "model": "openrouter/free",
+        "options": {}
+      },
+      "credentials": {
+        "openRouterApi": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_OPENROUTER_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        -544,
+        80
+      ],
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Webhook').item.json.headers['x-session-id'] ?? 'default' }}"
+      }
+    },
+    {
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -48,
+        -368
+      ],
+      "parameters": {
+        "options": {}
+      }
+    },
+    {
+      "name": "Search the web in Tavily",
+      "type": "@tavily/n8n-nodes-tavily.tavilyTool",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -176
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Search the internet for real-time information, current events, or factual data that you do not already know.",
+        "simple": false,
+        "options": {}
+      },
+      "credentials": {
+        "tavilyApi": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_TAVILY_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "name": "Calendar Agent Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        -272,
+        -160
+      ],
+      "parameters": {
+        "description": "Use this tool to interact with Google Calendar: create new events, update, delete or list meetings.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "CALENDAR_WORKFLOW_ID"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "query"
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "value": {
+            "query": "={{ $fromAI('query', \"The user's exact request about Google Calendar\", 'string') }}"
+          },
+          "schema": [
+            {
+              "id": "query",
+              "displayName": "query",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "removed": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Email Draft Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        -176,
+        -64
+      ],
+      "parameters": {
+        "description": "Use this tool whenever you need to draft, write, or save an email. You must provide a 'subject' and a 'body'.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "EMAIL_DRAFT_WORKFLOW_ID"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "subject",
+            "body"
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "value": {
+            "subject": "={{ $fromAI('subject', 'The subject line of the email', 'string') }}",
+            "body": "={{ $fromAI('body', 'The full text of the email', 'string') }}"
+          },
+          "schema": [
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "removed": false
+            },
+            {
+              "id": "body",
+              "displayName": "body",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "removed": false
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search the web in Tavily": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calendar Agent Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Draft Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

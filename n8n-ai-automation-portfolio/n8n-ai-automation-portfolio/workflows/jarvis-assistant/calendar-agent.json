@@ -1,0 +1,266 @@
+{
+  "name": "Jarvis - Calendar Agent (sub-workflow)",
+  "nodes": [
+    {
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "query",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Calendar Ai Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.query }}",
+        "options": {
+          "systemMessage": "=You are a Google Calendar assistant. The current date and time is {{ $now }}. Use the calendar tools to create, update, delete or list events as the user asks. To update or delete an event you must first look it up with the 'Get many events' tool to get its exact eventId. Always give each new event a clear title (summary) and a start and end time in ISO 8601 format. If the user does not give an end time, assume the event lasts 1 hour. Reply with a short confirmation of what you did."
+        }
+      }
+    },
+    {
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        96,
+        208
+      ],
+      "parameters": {
+        "model": "openrouter/free",
+        "options": {}
+      },
+      "credentials": {
+        "openRouterApi": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_OPENROUTER_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        240,
+        208
+      ],
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=calendar-session"
+      }
+    },
+    {
+      "name": "Create an event in Google Calendar",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        384,
+        208
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_GOOGLE_CALENDAR_CREDENTIAL"
+        }
+      },
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_CALENDAR_EMAIL"
+        },
+        "start": "={{ $fromAI('Start', 'Start date and time in ISO 8601 format, e.g. 2026-10-22T15:00:00', 'string') }}",
+        "end": "={{ $fromAI('End', 'End date and time in ISO 8601 format. If not given, use 1 hour after the start', 'string') }}",
+        "additionalFields": {
+          "summary": "={{ $fromAI('Summary', 'Title of the event', 'string') }}",
+          "description": "={{ $fromAI('Description', 'Optional description of the event', 'string') }}"
+        }
+      }
+    },
+    {
+      "name": "Delete an event in Google Calendar",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        592,
+        336
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_GOOGLE_CALENDAR_CREDENTIAL"
+        }
+      },
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_CALENDAR_EMAIL"
+        },
+        "options": {},
+        "eventId": "={{ $fromAI('Event_ID', \"The exact Google Calendar eventId of the event to delete. If you do not know it, use the 'Get many events' tool to find it first.\", 'string') }}"
+      }
+    },
+    {
+      "name": "Update an event in Google Calendar",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        832,
+        256
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_GOOGLE_CALENDAR_CREDENTIAL"
+        }
+      },
+      "parameters": {
+        "operation": "update",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_CALENDAR_EMAIL"
+        },
+        "useDefaultReminders": true,
+        "eventId": "={{ $fromAI('Event_ID', 'The unique alphanumeric ID of the Google Calendar event that needs to be updated', 'string') }}",
+        "updateFields": {
+          "start": "={{ $fromAI('Start', 'New start date and time in ISO 8601 format, only if it should change', 'string') }}",
+          "end": "={{ $fromAI('End', 'New end date and time in ISO 8601 format, only if it should change', 'string') }}",
+          "summary": "={{ $fromAI('Summary', 'New title of the event, only if it should change', 'string') }}"
+        }
+      }
+    },
+    {
+      "name": "Get many events in Google Calendar",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        688,
+        288
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_GOOGLE_CALENDAR_CREDENTIAL"
+        }
+      },
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_CALENDAR_EMAIL"
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Calendar Ai Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Calendar Ai Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Calendar Ai Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an event in Google Calendar": {
+      "ai_tool": [
+        [
+          {
+            "node": "Calendar Ai Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete an event in Google Calendar": {
+      "ai_tool": [
+        [
+          {
+            "node": "Calendar Ai Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update an event in Google Calendar": {
+      "ai_tool": [
+        [
+          {
+            "node": "Calendar Ai Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many events in Google Calendar": {
+      "ai_tool": [
+        [
+          {
+            "node": "Calendar Ai Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromAList",
+    "callerIds": "ORCHESTRATOR_WORKFLOW_ID"
+  },
+  "pinData": {}
+}

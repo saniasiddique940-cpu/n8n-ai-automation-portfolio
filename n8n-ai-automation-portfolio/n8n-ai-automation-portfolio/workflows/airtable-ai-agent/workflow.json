@@ -1,0 +1,312 @@
+{
+  "name": "Airtable AI Agent (Team Members manager)",
+  "nodes": [
+    {
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        -448,
+        64
+      ],
+      "parameters": {
+        "options": {}
+      }
+    },
+    {
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        32,
+        64
+      ],
+      "parameters": {
+        "options": {
+          "systemMessage": "You manage the Airtable base Product Launch Manager (base ID YOUR_BASE_ID). Table IDs: Product Launches YOUR_PRODUCT_LAUNCHES_TABLE_ID, Milestones YOUR_MILESTONES_TABLE_ID, Tasks YOUR_TASKS_TABLE_ID, Team Members YOUR_TEAM_MEMBERS_TABLE_ID.\n\nTeam Members field IDs: Name YOUR_NAME_FIELD_ID, Role YOUR_ROLE_FIELD_ID, Email YOUR_EMAIL_FIELD_ID, Department YOUR_DEPARTMENT_FIELD_ID. You already know these IDs and fields, so do not call list_bases, search_bases, list_tables_for_base or get_table_schema unless the user asks about a table not listed here.\n\nIMPORTANT: Call exactly ONE tool per step. Never call several tools, or the same tool several times, in the same step. Wait for the result of each call before making the next one. For several records, handle them one at a time, one call per record.\n\nTo read or find records: use the tool \"Search records in Airtable\" with Base YOUR_BASE_ID and the table ID.\nTo add new team members: use create_records_for_table (one call may contain several records) and always use FIELD IDs (starting with fld) as keys in fields, never field names. Example: {\"fields\": {\"YOUR_NAME_FIELD_ID\": \"Full Name\"}}. The result contains the new record IDs (starting with rec).\nTo change an existing team member: first search Team Members to get the record ID (starts with rec), then call \"Create or update a record in Airtable\" once per person with that recordID and the new values. When a field should not change, pass its current value.\nTo delete team members: get the exact record IDs (starts with rec) from the search tool or from the earlier create result, then call \"Delete a record in Airtable\" for ONE record, wait for the result, then the next one. Only delete records the user clearly asked to delete. If a delete fails with Forbidden or not found, the record may already be deleted: search the table to check before reporting a problem.\n\nNever repeat the same tool call with the same input. After the changes are done, reply with a short summary of what changed.",
+          "maxIterations": 25
+        }
+      }
+    },
+    {
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        -224,
+        304
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {}
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_GEMINI_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        -96,
+        304
+      ],
+      "parameters": {}
+    },
+    {
+      "name": "Airtable MCP",
+      "type": "@n8n/mcp-registry.airtable",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        304
+      ],
+      "parameters": {
+        "include": "selected",
+        "includeTools": [
+          "list_bases",
+          "search_bases",
+          "list_tables_for_base",
+          "get_table_schema",
+          "create_records_for_table"
+        ],
+        "options": {}
+      },
+      "credentials": {
+        "airtableMcpOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_AIRTABLE_MCP_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "name": "Search records in Airtable",
+      "type": "n8n-nodes-base.airtableTool",
+      "typeVersion": 2.2,
+      "position": [
+        176,
+        304
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Search records in an Airtable table. Provide the base ID and table ID.",
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $fromAI('Base', '', 'string') }}"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $fromAI('Table', '', 'string') }}"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_AIRTABLE_TOKEN_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "name": "Create or update a record in Airtable",
+      "type": "n8n-nodes-base.airtableTool",
+      "typeVersion": 2.2,
+      "position": [
+        304,
+        304
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Create or update a record in Airtable",
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_BASE_ID"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TEAM_MEMBERS_TABLE_ID"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "id"
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "value": {
+            "id": "={{ $fromAI(\"recordID\", \"The Airtable record ID (starts with rec) of the team member to update. Get it first with the search tool. Leave empty only when creating a new member.\", \"string\") }}",
+            "Name": "={{ $fromAI(\"newName\", \"The team member full name to save. Keep the current name if the user did not ask to change it.\", \"string\") }}",
+            "Email": "={{ $fromAI(\"email\", \"The team member email address, only if the user gave one. Otherwise leave empty.\", \"string\") }}"
+          },
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "type": "string",
+              "readOnly": true,
+              "defaultMatch": true,
+              "display": true,
+              "required": false,
+              "removed": false
+            },
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "type": "string",
+              "readOnly": false,
+              "defaultMatch": false,
+              "display": true,
+              "required": false,
+              "removed": false
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "type": "string",
+              "readOnly": false,
+              "defaultMatch": false,
+              "display": true,
+              "required": false,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_AIRTABLE_TOKEN_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "name": "Delete a record in Airtable",
+      "type": "n8n-nodes-base.airtableTool",
+      "typeVersion": 2.2,
+      "position": [
+        432,
+        304
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Delete one team member record from the Team Members table. Requires the exact recordID (starts with rec). Call it once per record.",
+        "operation": "deleteRecord",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_BASE_ID"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_TEAM_MEMBERS_TABLE_ID"
+        },
+        "id": "={{ $fromAI('recordID', 'The exact Airtable record ID (starts with rec) of the team member to delete. Get it first with the search tool or from the create result.', 'string') }}"
+      },
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_AIRTABLE_TOKEN_CREDENTIAL"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable MCP": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search records in Airtable": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create or update a record in Airtable": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete a record in Airtable": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

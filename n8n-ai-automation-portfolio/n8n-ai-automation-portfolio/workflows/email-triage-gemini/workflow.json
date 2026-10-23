@@ -1,0 +1,307 @@
+{
+  "name": "Email Triage and Draft Replies (Gemini)",
+  "nodes": [
+    {
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {}
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_GMAIL_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "name": "Text Classifier",
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "inputText": "={{ $json.snippet }}",
+        "options": {},
+        "categories": {
+          "categories": [
+            {
+              "category": "order",
+              "description": "Email that contains a new order. Separate it from other emails."
+            },
+            {
+              "category": "inquiry",
+              "description": "Email where the customer asks a question or makes an inquiry. Separate it from other emails."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        296,
+        232
+      ],
+      "parameters": {
+        "options": {}
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_GEMINI_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "name": "Message a model",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        576,
+        -96
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_GEMINI_CREDENTIAL"
+        }
+      },
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "models/gemini-3.8-flash",
+          "cachedResultName": "models/gemini-3.8-flash"
+        },
+        "builtInTools": {},
+        "messages": {
+          "values": [
+            {
+              "content": "=Write the order confirmation email for this incoming order email:\n\nSubject: {{ $(\"Gmail Trigger\").item.json.Subject }}\nFrom: {{ $(\"Gmail Trigger\").item.json.From }}\n\n{{ $(\"Gmail Trigger\").item.json.snippet }}"
+            }
+          ]
+        },
+        "options": {
+          "systemMessage": "Act as a customer support specialist. Write a clear, professional order confirmation email for an order. Include placeholders for Order Number, Item List, Total Amount, Estimated Delivery Date, and Shipping Address. End with a polite thank you and a support contact link."
+        }
+      }
+    },
+    {
+      "name": "Reply to Inquiry",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        576,
+        96
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_GEMINI_CREDENTIAL"
+        }
+      },
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "models/gemini-3.8-flash",
+          "cachedResultName": "models/gemini-3.8-flash"
+        },
+        "simplify": false,
+        "builtInTools": {},
+        "messages": {
+          "values": [
+            {
+              "content": "=Act as a helpful and professional customer support agent. Draft a clear, concise reply addressing the sender's inquiry directly. If any details are missing (such as account numbers or specific dates), use clear placeholders like [Insert Detail Here] instead of guessing. Always end with a polite closing and a standard support sign-off.\n\nWrite a reply to this customer inquiry email:\n\nSubject: {{ $(\"Gmail Trigger\").item.json.Subject }}\nFrom: {{ $(\"Gmail Trigger\").item.json.From }}\n\n{{ $(\"Gmail Trigger\").item.json.snippet }}"
+            }
+          ]
+        },
+        "options": {
+          "systemMessage": "Act as a customer support specialist. Write a clear, friendly, professional reply to the customer inquiry. Address the customer's question directly; if specific details are unknown, use clear placeholders instead of inventing facts. Offer further help and end with a polite sign-off and a support contact link."
+        }
+      }
+    },
+    {
+      "name": "Draft Order Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        928,
+        -96
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_GMAIL_CREDENTIAL"
+        }
+      },
+      "parameters": {
+        "resource": "draft",
+        "subject": "=Re: {{ $(\"Gmail Trigger\").item.json.Subject }}",
+        "message": "={{ $json.content?.parts?.[0]?.text ?? $json.candidates?.[0]?.content?.parts?.[0]?.text ?? \"\" }}",
+        "options": {
+          "threadId": "={{ $(\"Gmail Trigger\").item.json.threadId }}",
+          "sendTo": "={{ $(\"Gmail Trigger\").item.json.From }}"
+        }
+      }
+    },
+    {
+      "name": "Draft Inquiry Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        928,
+        96
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_GMAIL_CREDENTIAL"
+        }
+      },
+      "parameters": {
+        "resource": "draft",
+        "subject": "=Re: {{ $(\"Gmail Trigger\").item.json.Subject }}",
+        "message": "={{ $json.content?.parts?.[0]?.text ?? $json.candidates?.[0]?.content?.parts?.[0]?.text ?? \"\" }}",
+        "options": {
+          "threadId": "={{ $(\"Gmail Trigger\").item.json.threadId }}",
+          "sendTo": "={{ $(\"Gmail Trigger\").item.json.From }}"
+        }
+      }
+    },
+    {
+      "name": "Mark Email as Read",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1152,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_ME",
+          "name": "YOUR_GMAIL_CREDENTIAL"
+        }
+      },
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $(\"Gmail Trigger\").item.json.id }}"
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Text Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Text Classifier",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Draft Order Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reply to Inquiry": {
+      "main": [
+        [
+          {
+            "node": "Draft Inquiry Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Order Reply": {
+      "main": [
+        [
+          {
+            "node": "Mark Email as Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Inquiry Reply": {
+      "main": [
+        [
+          {
+            "node": "Mark Email as Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Classifier": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply to Inquiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
